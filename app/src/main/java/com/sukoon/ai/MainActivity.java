@@ -89,8 +89,52 @@ public class MainActivity extends Activity {
         saveKey.setOnClickListener(v -> {
             String k=keyBox.getText().toString().trim();
             if(k.isEmpty()) { status.setText("पहले Gemini API key डालो।"); return; }
-            apiKey=k; prefs.edit().putString("api_key", k).apply();
-            status.setText("API key इस फोन में सेव हो गई।");
+            status.setText("API key जाँच रही हूँ… इंटरनेट चालू रखें।");
+            saveKey.setEnabled(false);
+            new Thread(() -> {
+                HttpURLConnection c=null;
+                try {
+                    URL u=new URL("https://generativelanguage.googleapis.com/v1beta/models?key="+k);
+                    c=(HttpURLConnection)u.openConnection();
+                    c.setRequestMethod("GET"); c.setConnectTimeout(15000); c.setReadTimeout(20000);
+                    int code=c.getResponseCode();
+                    InputStream is=code>=200&&code<300?c.getInputStream():c.getErrorStream();
+                    ByteArrayOutputStream out=new ByteArrayOutputStream(); byte[] buf=new byte[4096]; int n;
+                    while((n=is.read(buf))!=-1) out.write(buf,0,n);
+                    JSONObject resp=new JSONObject(out.toString("UTF-8"));
+                    if(code<200||code>=300) {
+                        String msg=resp.optJSONObject("error")!=null?resp.getJSONObject("error").optString("message","HTTP "+code):"HTTP "+code;
+                        throw new Exception("API key अस्वीकार हुई (HTTP "+code+"): "+msg);
+                    }
+                    JSONArray models=resp.optJSONArray("models");
+                    String chosen="";
+                    if(models!=null) {
+                        for(int j=0;j<models.length();j++) {
+                            JSONObject m=models.getJSONObject(j);
+                            JSONArray methods=m.optJSONArray("supportedGenerationMethods");
+                            if(methods!=null) for(int z=0;z<methods.length();z++) {
+                                if("generateContent".equals(methods.optString(z))) {
+                                    String name=m.optString("name","");
+                                    if(name.endsWith("gemini-2.5-flash")) { chosen=name.substring("models/".length()); break; }
+                                    if(chosen.isEmpty()) chosen=name.substring("models/".length());
+                                }
+                            }
+                            if(chosen.equals("gemini-2.5-flash")) break;
+                        }
+                    }
+                    if(chosen.isEmpty()) throw new Exception("API key सही दिखती है, लेकिन कोई generateContent मॉडल उपलब्ध नहीं है। Google AI Studio में API key और मॉडल access जाँचें।");
+                    final String modelName=chosen;
+                    runOnUiThread(() -> {
+                        apiKey=k;
+                        prefs.edit().putString("api_key",k).putString("model_name",modelName).apply();
+                        status.setText("API key सही है और सेव हो गई ❤️ मॉडल: "+modelName);
+                        saveKey.setEnabled(true);
+                    });
+                } catch(Exception e) {
+                    String msg=e.getMessage()==null?"नेटवर्क की समस्या":e.getMessage();
+                    runOnUiThread(() -> { status.setText("API key जाँच असफल: "+msg); saveKey.setEnabled(true); });
+                } finally { if(c!=null)c.disconnect(); }
+            }).start();
         });
 
         question = new EditText(this);
@@ -146,9 +190,10 @@ public class MainActivity extends Activity {
         new Thread(() -> {
             HttpURLConnection c=null;
             try {
-                String[] models={"gemini-2.5-flash","gemini-2.0-flash"};
+                String selected=prefs.getString("model_name","gemini-2.5-flash");
+                String[] models={selected,"gemini-2.5-flash","gemini-2.0-flash"};
                 JSONObject data=null; String error="AI से जवाब नहीं मिला।";
-                for(String model:models) {
+                for(String model:new LinkedHashSet<String>(Arrays.asList(models))) {
                     try {
                         URL u=new URL("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent?key="+apiKey);
                         c=(HttpURLConnection)u.openConnection(); c.setRequestMethod("POST");

@@ -4,7 +4,7 @@
     <queries>
         <intent><action android:name="android.speech.RecognitionService"/></intent>
     </queries>
-    <application android:theme="@android:style/Theme.Material.Light.NoActionBar" android:label="Sukoon AI" android:usesCleartextTraffic="false" android:allowBackup="false">
+    <application android:theme="@android:style/Theme.Material.Light.NoActionBar" android:label="Sukoon AI Offline" android:usesCleartextTraffic="false" android:allowBackup="false">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
